@@ -37,10 +37,12 @@ public class TestingUtility {
         XCTAssertEqual(parsedValue, codable)
     }
     
-    public static func createSignedDataFromJson(_ path: String) -> String {
+    public static func createSignedDataFromJson(_ path: String) async -> String {
         let payload = readFile(path)
         let signingKey = Crypto.P256.Signing.PrivateKey()
-        let signer: JWTSigner = try! .es256(key: .private(pem: signingKey.pemRepresentation))
+        let signers = JWTKeyCollection()
+        let key = try! ES256PrivateKey(pem: signingKey.pemRepresentation)
+        await signers.add(ecdsa: key)
         
         let header = JWTHeader(alg: "ES256")
 
@@ -49,10 +51,9 @@ public class TestingUtility {
         let encodedHeader = headerData.base64EncodedString()
 
         let encodedPayload = payload.data(using: .utf8)!.base64EncodedString()
-
-        let signature = try! signer.algorithm.sign("\(encodedHeader).\(encodedPayload)".data(using: .utf8)!)
-
-        return "\(base64ToBase64URL(encodedHeader)).\(base64ToBase64URL(encodedPayload)).\(base64ToBase64URL(Data(signature).base64EncodedString()))";
+        let jwtPayload = try! await signers.sign("\(encodedHeader).\(encodedPayload)")
+        
+        return "\(base64ToBase64URL(encodedHeader)).\(base64ToBase64URL(encodedPayload)).\(jwtPayload.split(separator: ".")[1])"
     }
     
     private static func base64ToBase64URL(_ encodedString: String) -> String {
@@ -61,4 +62,8 @@ public class TestingUtility {
             .replacingOccurrences(of: "-", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
+}
+
+extension String: @retroactive JWTPayload {
+    public func verify(using algorithm: some JWTKit.JWTAlgorithm) async throws { }
 }
